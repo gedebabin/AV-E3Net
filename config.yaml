@@ -1,0 +1,27 @@
+# lightning.pytorch==2.0.6
+seed_everything: 12345
+trainer:
+  # accelerator: cpu
+  # devices: 1
+  # strategy: ddp_find_unused_parameters_true
+  callbacks:
+    # - class_path: pytorch_lightning.callbacks.EarlyStopping
+    #   init_args:
+    #     patience: 10
+    #     mode: max
+    #     monitor: val_accuracy
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: train_loss
+        mode: min
+        filename: checkpoint
+  # fast_dev_run: true
+  max_epochs: 3
+  # max_steps: 1
+  deterministic: true
+# model:
+#   lr: 0.0005
+#   wd: 0.0001
+data:
+  batch_size: 16
+# ckpt_path: lightning_logs/version_58/checkpoints/checkpoint.ckpt

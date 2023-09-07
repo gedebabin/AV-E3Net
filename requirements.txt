@@ -1,0 +1,7 @@
+lightning
+matplotlib
+torchaudio
+torchinfo
+torchvision
+av
+jsonargparse

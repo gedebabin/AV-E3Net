@@ -1,0 +1,4 @@
+venv
+lightning_logs
+**/__pycache__
+.vscode
