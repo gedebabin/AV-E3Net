@@ -14,7 +14,7 @@ def cli_main():
     cli = LightningCLI(AVE3Net, DataModule, save_config_callback=None)
 
     # if cli.subcommand == "fit":
-    #     cli.trainer.test(cli.model, cli.datamodule, ckpt_path="best")
+    #     cli.trainer.test(cli.model, cli.datamodule, ckpt_path="lightning_logs/version_84/checkpoints/checkpoint.ckpt")
 
 
 if __name__ == "__main__":

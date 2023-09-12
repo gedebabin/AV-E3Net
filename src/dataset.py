@@ -29,14 +29,14 @@ class Dataset(torch.utils.data.Dataset):
         noisy_waveform, _sr = torchaudio.load(noisy_path)
 
         # normalizetion for shufflenet https://pytorch.org/hub/pytorch_vision_shufflenet_v2/
-        preprocess = torchvision.transforms.Compose([
-            # torchvision.transforms.Resize(224),
-            # torchvision.transforms.CenterCrop(224),
-            # torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        # preprocess = torchvision.transforms.Compose([
+        #     # torchvision.transforms.Resize(224),
+        #     # torchvision.transforms.CenterCrop(224),
+        #     # torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        # ])
 
         vframes = vframes / 255
-        vframes = preprocess(vframes)
+        # vframes = preprocess(vframes)
 
         # dog = torchvision.io.read_image('dog.jpg')
         # dog = dog / 255

@@ -10,7 +10,7 @@ datamodule.setup("test")
 
 train_dataloader = datamodule.test_dataloader()
 model = AVE3Net.load_from_checkpoint(
-    checkpoint_path="lightning_logs/version_84/checkpoints/checkpoint.ckpt",
+    checkpoint_path="lightning_logs/version_86/checkpoints/checkpoint.ckpt",
     map_location=torch.device('cpu')
 )
 

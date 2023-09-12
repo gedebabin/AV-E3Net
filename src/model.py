@@ -8,6 +8,7 @@ from utils.save_fig import save_fig
 from utils.plot_waveform import plot_waveform
 from typing import Tuple
 from shufflenet_encoder import _shufflenetv2_05
+from torchmetrics.functional.audio import scale_invariant_signal_distortion_ratio, perceptual_evaluation_speech_quality, signal_distortion_ratio
 
 
 class ProjectionBlock(nn.Module):
@@ -223,7 +224,7 @@ class AVE3Net(pl.LightningModule):
 
         return ax
 
-    def training_step(self, batch):
+    def training_step(self, batch, batch_idx):
         video, noisy, clean = batch
         # print('lens', len(video), len(noisy), len(clean))
         # print('ts video', video[0].shape, video[1].shape)
@@ -240,7 +241,45 @@ class AVE3Net(pl.LightningModule):
 
         x_hat = self.forward((video, noisy))
         loss = nn.functional.mse_loss(x_hat, clean)
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True, batch_size=16)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        video, noisy, clean = batch
+
+        video = nn.utils.rnn.pad_sequence(video, batch_first=True)  # pad batch to the max size
+        noisy = nn.utils.rnn.pad_sequence(noisy, batch_first=True).transpose(1, 2)
+        clean = nn.utils.rnn.pad_sequence(clean, batch_first=True).transpose(1, 2)
+
+        x_hat = self.forward((video, noisy))
+        loss = nn.functional.mse_loss(x_hat, clean)
+        self.log("validation_loss", loss, prog_bar=True, sync_dist=True, batch_size=16)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        video, noisy, clean = batch
+
+        video = nn.utils.rnn.pad_sequence(video, batch_first=True)  # pad batch to the max size
+        noisy = nn.utils.rnn.pad_sequence(noisy, batch_first=True).transpose(1, 2)
+        clean = nn.utils.rnn.pad_sequence(clean, batch_first=True).transpose(1, 2)
+
+        x_hat = self.forward((video, noisy))
+
+        pesq = perceptual_evaluation_speech_quality(x_hat, clean, 16000, 'wb')
+        sdr = signal_distortion_ratio(x_hat, clean)
+        sisdr = scale_invariant_signal_distortion_ratio(x_hat, clean)
+
+        loss = nn.functional.mse_loss(x_hat, clean)
+
+        log = {
+            "loss": loss,
+            "pesq": pesq.mean(),
+            "sdr": sdr.mean(),
+            "sisdr": sisdr.mean()
+        }
+
+        # self.log("test_loss", loss, prog_bar=True, sync_dist=True, batch_size=16)
+        self.log_dict(log, prog_bar=True, batch_size=16)
         return loss
 
     def configure_optimizers(self):
@@ -249,8 +288,8 @@ class AVE3Net(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    data = [(torch.rand((16, 25, 3, 96, 96)), torch.rand((16, 1, 16000)))]
+    data = [(torch.rand((16, 25, 3, 96, 96)), torch.rand((16, 1, 25000)))]
     summary(AVE3Net(), input_data=data, col_names=["input_size",
                                                    "output_size",
-                                                   "num_params"], depth=2)
+                                                   "num_params"], depth=1)
     # summary(AVE3Net(), input_size=(1, 60000))

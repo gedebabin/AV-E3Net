@@ -3,7 +3,12 @@ batch items should have same shape
 Feature concatenation in GS-fusion block. Shapes missmatch
 Shufflenet is for image classification, need to take features without the last fc layer
 find_unused_parameters=True in DDP constructor. unused parameters in shufflenet and lstm block(typo)
+metrics
 
 open
-How does real-time work? Every 0.x second processing?
-metrics
+shufflenet normalize, input size 224
+loss function too close to zero.
+wer metric
+rtf metric
+How does real-time work?
+layernorm
