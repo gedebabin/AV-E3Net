@@ -5,10 +5,10 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from utils.save_fig import save_fig
-from utils.plot_waveform import plot_waveform
-from typing import Tuple
+from typing import List, Tuple
 from shufflenet_encoder import _shufflenetv2_05
 from torchmetrics.functional.audio import scale_invariant_signal_distortion_ratio, perceptual_evaluation_speech_quality, signal_distortion_ratio
+import utils.logger as logger
 
 
 class ProjectionBlock(nn.Module):
@@ -70,30 +70,41 @@ class LSTMBlock(nn.Module):
         self.layer_norm_v = nn.LayerNorm(512)
         self.layer_norm_v2 = nn.LayerNorm(512)
 
-    def forward(self, x, dense_audio, dense_video):
+    def forward(self, x, dense_audio, dense_video, ha, hv):
         vx, ax = x
         ax, dense_audio = self.gsfusion((vx, ax), dense_audio)
 
         ax = self.map_to_high_dim_a(ax)
         dense_audio += ax
-        ax, h = self.lstm_a(ax)
+        if (ha != None):
+            ax, ha = self.lstm_a(ax, ha)
+        else:
+            ax, ha = self.lstm_a(ax)
+
         ax = self.layer_norm_a(ax)
         ax += dense_audio
         ax = self.layer_norm_a2(ax)
 
         vx = self.map_to_high_dim_v(vx)
         dense_video += vx
-        vx, h = self.lstm_v(vx)
+        if hv != None:
+            vx, hv = self.lstm_v(vx, hv)
+        else:
+            vx, hv = self.lstm_v(vx)
         vx = self.layer_norm_v(vx)
         vx += dense_video
         vx = self.layer_norm_v2(vx)
 
-        return (vx, ax), dense_audio, dense_video
+        return (vx, ax), dense_audio, dense_video, ha, hv
 
 
 class AVE3Net(pl.LightningModule):
     def __init__(self):
         super().__init__()
+        self.debug_logger = logger.get_logger(self.__class__.__name__, logger.logging.DEBUG)
+
+        self.ha = None
+        self.hv = None
 
         # audio
         self.window = 320
@@ -147,7 +158,7 @@ class AVE3Net(pl.LightningModule):
     #             print(name)
     #     print("on_before_opt exit")
 
-    def forward(self, x: Tuple[Tensor, Tensor]):
+    def forward(self, x: Tuple[Tensor, Tensor]) -> Tensor:
         """
         x of shape (vx, ax)
 
@@ -157,7 +168,7 @@ class AVE3Net(pl.LightningModule):
         """
 
         vx, ax = x
-        # print(vx.shape, ax.shape)
+        self.debug_logger.debug(f'forward input vx.shape {vx.shape}, ax.shape {ax.shape}')
 
         if vx.dim() not in [4, 5]:
             raise RuntimeError(f"AV-E3Net video input wrong shape: {vx.shape}")
@@ -175,11 +186,13 @@ class AVE3Net(pl.LightningModule):
 
         ax, rest = self.pad_signal(ax)
         audio_encoded = self.encoder(ax)
-        # print('audion_encoded', audio_encoded.shape)
+        self.debug_logger.debug(f'audio_encoded.shape {audio_encoded.shape}')
 
         ax = audio_encoded.transpose(1, 2)
         ax = self.l1(ax)
+        self.debug_logger.debug(f'ax.shape {ax.shape}')
         ax = self.audio_projection_block(ax)
+        self.debug_logger.debug(f'ax.shape {ax.shape}')
 
         ##############
 
@@ -201,10 +214,13 @@ class AVE3Net(pl.LightningModule):
         dense_audio = torch.zeros_like(ax)
         dense_video = torch.zeros_like(vx)
 
-        (vx, ax), dense_audio, dense_video = self.lstm1((vx, ax), dense_audio, dense_video)
-        (vx, ax), dense_audio, dense_video = self.lstm2((vx, ax), dense_audio, dense_video)
-        (vx, ax), dense_audio, dense_video = self.lstm3((vx, ax), dense_audio, dense_video)
-        (vx, ax), dense_audio, dense_video = self.lstm4((vx, ax), dense_audio, dense_video)
+        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm1((vx, ax), dense_audio, dense_video, self.ha, self.hv)
+        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm2((vx, ax), dense_audio, dense_video, ha, hv)
+        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm3((vx, ax), dense_audio, dense_video, ha, hv)
+        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm4((vx, ax), dense_audio, dense_video, ha, hv)
+
+        self.ha = ha
+        self.hv = hv
 
         ##############
 
@@ -224,51 +240,52 @@ class AVE3Net(pl.LightningModule):
 
         return ax
 
-    def training_step(self, batch, batch_idx):
+    def process_batch(self, batch: Tuple[List[Tensor], List[Tensor], List[Tensor]], batch_idx):
         video, noisy, clean = batch
-        # print('lens', len(video), len(noisy), len(clean))
-        # print('ts video', video[0].shape, video[1].shape)
-        # print('ts noisy', noisy[0].shape, noisy[1].shape)
-        # print('ts clean', clean[0].shape, clean[1].shape)
+        self.debug_logger.debug(f'process_batch input video[0]{video[0].shape}, noisy[0]{noisy[0].shape}')
 
-        video = nn.utils.rnn.pad_sequence(video, batch_first=True)  # pad batch to the max size
+        # convert audios from [1, T] to [T, 1] for pad_sequence
+        noisy = [x.transpose(0, 1) for x in noisy]
+        clean = [x.transpose(0, 1) for x in clean]
+
+        # pad batch to max size
+        # audios transposed back to [1, T] after padding
+        video = nn.utils.rnn.pad_sequence(video, batch_first=True)
         noisy = nn.utils.rnn.pad_sequence(noisy, batch_first=True).transpose(1, 2)
         clean = nn.utils.rnn.pad_sequence(clean, batch_first=True).transpose(1, 2)
-
-        # print('padded video', video.shape)
-        # print('padded noisy', noisy.shape)
-        # print('padded clean', clean.shape)
+        # padded video [16, 153, 3, 96, 96], noisy [16, 1, 98304], clean [16, 1, 98304]
+        self.debug_logger.debug(f'padded video {video.shape}, noisy {noisy.shape}, clean {clean.shape}')
 
         x_hat = self.forward((video, noisy))
+        return x_hat, clean
+
+    def training_step(self, batch: Tuple[List[Tensor], List[Tensor], List[Tensor]], batch_idx):
+        self.ha = None
+        self.hv = None
+
+        x_hat, clean = self.process_batch(batch, batch_idx)
         loss = nn.functional.mse_loss(x_hat, clean)
         self.log("train_loss", loss, prog_bar=True, batch_size=16)
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        video, noisy, clean = batch
+    def validation_step(self, batch: Tuple[List[Tensor], List[Tensor], List[Tensor]], batch_idx):
+        self.ha = None
+        self.hv = None
 
-        video = nn.utils.rnn.pad_sequence(video, batch_first=True)  # pad batch to the max size
-        noisy = nn.utils.rnn.pad_sequence(noisy, batch_first=True).transpose(1, 2)
-        clean = nn.utils.rnn.pad_sequence(clean, batch_first=True).transpose(1, 2)
-
-        x_hat = self.forward((video, noisy))
+        x_hat, clean = self.process_batch(batch, batch_idx)
         loss = nn.functional.mse_loss(x_hat, clean)
         self.log("validation_loss", loss, prog_bar=True, sync_dist=True, batch_size=16)
         return loss
 
-    def test_step(self, batch, batch_idx):
-        video, noisy, clean = batch
+    def test_step(self, batch: Tuple[List[Tensor], List[Tensor], List[Tensor]], batch_idx):
+        self.ha = None
+        self.hv = None
 
-        video = nn.utils.rnn.pad_sequence(video, batch_first=True)  # pad batch to the max size
-        noisy = nn.utils.rnn.pad_sequence(noisy, batch_first=True).transpose(1, 2)
-        clean = nn.utils.rnn.pad_sequence(clean, batch_first=True).transpose(1, 2)
-
-        x_hat = self.forward((video, noisy))
+        x_hat, clean = self.process_batch(batch, batch_idx)
 
         pesq = perceptual_evaluation_speech_quality(x_hat, clean, 16000, 'wb')
         sdr = signal_distortion_ratio(x_hat, clean)
         sisdr = scale_invariant_signal_distortion_ratio(x_hat, clean)
-
         loss = nn.functional.mse_loss(x_hat, clean)
 
         log = {
@@ -278,7 +295,6 @@ class AVE3Net(pl.LightningModule):
             "sisdr": sisdr.mean()
         }
 
-        # self.log("test_loss", loss, prog_bar=True, sync_dist=True, batch_size=16)
         self.log_dict(log, prog_bar=True, batch_size=16)
         return loss
 
@@ -288,7 +304,7 @@ class AVE3Net(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    data = [(torch.rand((16, 25, 3, 96, 96)), torch.rand((16, 1, 25000)))]
+    data = [(torch.rand((16, 25, 3, 96, 96)), torch.rand((16, 1, 16000)))]
     summary(AVE3Net(), input_data=data, col_names=["input_size",
                                                    "output_size",
                                                    "num_params"], depth=1)

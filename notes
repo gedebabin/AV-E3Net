@@ -8,7 +8,78 @@ metrics
 open
 shufflenet normalize, input size 224
 loss function too close to zero.
-wer metric
-rtf metric
-How does real-time work?
+wer metric +
+rtf metric +
+How does real-time work? +
 layernorm
+
+
+todo 
+
+AO vs AV compare vs Naive AV
+chunk input for real-time 160=10ms=4frames (640 = 40ms = 1 video frame) samples 1 frame
+Different SNR
+dataset is too complicated
+new dataset with interfering speakers
+add images in BA (input waveform -> input features -> mask -> applied mask -> out features -> output waveform)
+add audios to github and write about it in ba
+
+BA structure:
+
+\section{Introduction}
+
+tell story, non-technical
+
+0. General introduction
+1. Audio-only with limitations
+2. AV SE benefits Video importance
+3. AV-SE in real time on CPU
+ADD structure of BA
+
+\section{Problem}
+ Problem formulation source avseOverview chapter 2
+ real-time capabilities on cpu
+try to avoid repetition from introduction
+
+
+\section{Related work}
+
+add more details, technical
+
+ AO-SE problem with interfering speakers
+ Personalized speech enhancement 
+ Assist of video AV-SE
+About deep learning :
+Summary of E3Net + ConvTASNET
+- Summary of deeper model architecture papers
+ResNet
+DenseNet
+
+\section{Methodology}
+ Model overview
+ Audio:
+     Conv encoder and conv encoder vs STFT
+    Layernorm ?
+     Enhancement network (masking network) what is LSTM (RNN, Seq2Seq models overview 7b) 
+     Audio decoder
+ Dense connection module genauer angucken!
+ Video:
+     ShuffleNetV2 vs alternatives ([22,23]) preprocessing
+     only crops of the target faces are considered (overview ch 5a)
+Fusion module
+ Describe all metrics (WER, PESQ, SDR, RTF)
+
+\section{Training, Testing and Evaluation}
+ Preparation of datasets (LRS3_30h)
+ Results
+
+\section{Conclusion}
+ pro and contra, limitations and benefits of the method
+Compared to knowledge-based approaches
+Audio: several targeted speakers (?)
+Visual: illumination changes, occlusion and pose variations.
+
+\subsection{Future work}
+ Assist of text? find source. 
+Assist of picture only (source overview 5d)
+

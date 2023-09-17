@@ -18,7 +18,7 @@ trainer:
         monitor: validation_loss
         mode: min
         filename: checkpoint
-  # fast_dev_run: true
+  fast_dev_run: true
   max_epochs: 10
   # max_steps: 1
   deterministic: true
@@ -27,4 +27,4 @@ trainer:
 #   wd: 0.0001
 data:
   batch_size: 16
-ckpt_path: lightning_logs/version_86/checkpoints/checkpoint.ckpt
+# ckpt_path: lightning_logs/version_86/checkpoints/checkpoint.ckpt

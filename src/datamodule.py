@@ -1,43 +1,19 @@
 import lightning.pytorch as pl
 from torch.utils.data import DataLoader
-from e3net.dataset_e3net import DatasetAudioOnly
 from dataset import Dataset
-
-AUDIO_ONLY = 0
-
-
-def collate_fn(batch):
-    if AUDIO_ONLY:
-        # audio-only
-        x = [item[0].transpose(0, 1) for item in batch]
-        y = [item[1].transpose(0, 1) for item in batch]
-        return x, y
-
-    video = [item[0][0] for item in batch]
-    noisy = [item[0][1].transpose(0, 1) for item in batch]
-    clean = [item[1].transpose(0, 1) for item in batch]
-    return video, noisy, clean
+from utils.plot_waveforms import plot_waveforms
+import utils.logger as logger
+from typing import List, Tuple
+from torch import Tensor
 
 
 class DataModule(pl.LightningDataModule):
     def __init__(self, batch_size: int = 1):
         super().__init__()
+        self.logger = logger.get_logger(self.__class__.__name__, logger.logging.NOTSET)
         self.batch_size = batch_size
 
     def setup(self, stage: str):
-
-        ######################
-        if AUDIO_ONLY:
-            if stage == "fit":
-                self.train = DatasetAudioOnly('train_avgen.tsv')
-                self.valid = DatasetAudioOnly('valid_avgen.tsv')
-
-            if stage == 'test':
-                self.test = DatasetAudioOnly('test_avgen.tsv')
-
-            return
-        ######################
-
         if stage == "fit":
             self.train = Dataset('train_avgen.tsv')
             self.valid = Dataset('valid_avgen.tsv')
@@ -46,40 +22,47 @@ class DataModule(pl.LightningDataModule):
             self.test = Dataset('test_avgen.tsv')
 
     def train_dataloader(self):
-        return DataLoader(self.train, batch_size=self.batch_size, num_workers=12, collate_fn=collate_fn)
+        return DataLoader(self.train, batch_size=self.batch_size, num_workers=12, collate_fn=self.collate_fn)
 
     def val_dataloader(self):
-        return DataLoader(self.valid, batch_size=self.batch_size, num_workers=12, collate_fn=collate_fn)
+        return DataLoader(self.valid, batch_size=self.batch_size, num_workers=12, collate_fn=self.collate_fn)
 
     def test_dataloader(self):
-        return DataLoader(self.test, batch_size=self.batch_size, num_workers=12, collate_fn=collate_fn)
+        return DataLoader(self.test, batch_size=self.batch_size, num_workers=12, collate_fn=self.collate_fn)
 
-    # def teardown(self, stage: str):
-    #     # Used to clean-up when the run is finished
-    #     pass
+    def collate_fn(self, batch: List[Tuple[Tensor, Tensor, Tensor]]) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
+        '''
+            Because train/test items are of different length, they need to be regrouped before passing to the model to avoid different sizes in a batch.
+            Dataset returns items of type: (vframes, noisy_waveform, clean_waveform)
+            1st item e.x.: (vframes [80, 3, 96, 96], noisy_waveform [1, 51200], clean_waveform [1, 51200])
+            2nd item e.x.: (vframes [37, 3, 96, 96], noisy_waveform [1, 24576], clean_waveform [1, 24576])
+
+            batch
+                list (of size batch_size) of tuples returned by dataset (vframes, noisy_waveform, clean_waveform)
+            return
+                Regrouped tuple of lists
+        '''
+        # [batch_size, (vframes, noisy, clean)]
+        self.logger.debug(
+            f'collate input: batch[0][0].shape {batch[0][0].shape}, batch[0][1].shape {batch[0][1].shape}, batch[0][2].shape {batch[0][2].shape}')
+        video = [item[0] for item in batch]
+        noisy = [item[1] for item in batch]
+        clean = [item[2] for item in batch]
+        self.logger.debug(f'collate output: {video[0].shape} {noisy[0].shape} {clean[0].shape}')
+        return video, noisy, clean
 
 
 if __name__ == "__main__":
-    datamodule = DataModule(batch_size=4)
+    datamodule = DataModule(batch_size=2)
     datamodule.setup("fit")
 
     train_dataloader = datamodule.train_dataloader()
-
     i = iter(train_dataloader)
+    batch: Tuple[List[Tensor], List[Tensor], List[Tensor]] = next(i)
+    vframes_list, noisy_list, clean_list = batch
 
-    batch = next(i)
-    x, y = batch
+    vframes = vframes_list[0]
+    noisy_waveform = noisy_list[0]
+    clean_waveform = clean_list[0]
 
-    if AUDIO_ONLY:
-        print(x[0].shape)
-    else:
-        v, a = x[0]
-        print(v.shape, a.shape)
-
-    # print(x.shape, y.shape)
-
-    # print(len(train_dataloader.dataset))
-
-    # noisy, clean = train_dataloader.dataset[0]
-
-    # plot_2_waveform(noisy, clean, 16000)
+    # plot_2_waveform(noisy_waveform, clean_waveform, 16000, 'noisy', 'clean')
