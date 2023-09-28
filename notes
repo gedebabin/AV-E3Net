@@ -17,10 +17,12 @@ layernorm
 todo 
 
 AO vs AV compare vs Naive AV
-chunk input for real-time 160=10ms=4frames (640 = 40ms = 1 video frame) samples 1 frame
-Different SNR
-dataset is too complicated
 new dataset with interfering speakers
+Different SNR
+chunk input for real-time 160=10ms=4frames (640 = 40ms = 1 video frame) samples 1 frame
+LSTM 100 Hz.
+
+dataset is too complicated
 add images in BA (input waveform -> input features -> mask -> applied mask -> out features -> output waveform)
 add audios to github and write about it in ba
 

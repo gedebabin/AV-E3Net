@@ -98,10 +98,10 @@ class LSTMBlock(nn.Module):
         return (vx, ax), dense_audio, dense_video, ha, hv
 
 
-class AVE3Net(pl.LightningModule):
-    def __init__(self):
+class AVE3NetModule(nn.Module):
+    def __init__(self, fusion_block, n_lstm=4):
         super().__init__()
-        self.debug_logger = logger.get_logger(self.__class__.__name__, logger.logging.DEBUG)
+        self.debug_logger = logger.get_logger(self.__class__.__name__, logger.logging.NOTSET)
 
         self.ha = None
         self.hv = None
@@ -114,20 +114,18 @@ class AVE3Net(pl.LightningModule):
         self.audio_projection_block = ProjectionBlock(2048, 512)
         self.mask_prediction = nn.Sequential(nn.Linear(512, 2048), nn.Sigmoid())
         self.decoder = nn.ConvTranspose1d(2048, 1, self.window, self.stride)
-        #############
 
         # video
         self.shufflenet = _shufflenetv2_05()
         self.video_projection_block = ProjectionBlock(1024, 512)
 
-        # GS fusion
-        self.gsfusion = GSFusion()
+        # fusion
+        self.gsfusion = fusion_block
 
         # LSTM
-        self.lstm1 = LSTMBlock()
-        self.lstm2 = LSTMBlock()
-        self.lstm3 = LSTMBlock()
-        self.lstm4 = LSTMBlock()
+        self.lstm_blocks = nn.ModuleList()
+        for _ in range(n_lstm):
+            self.lstm_blocks.append(LSTMBlock())
 
     def pad_signal(self, input):
         # input is the waveforms: (B, T) or (B, 1, T)
@@ -188,6 +186,15 @@ class AVE3Net(pl.LightningModule):
         audio_encoded = self.encoder(ax)
         self.debug_logger.debug(f'audio_encoded.shape {audio_encoded.shape}')
 
+        # outmap_min, _ = torch.min(audio_encoded, dim=1, keepdim=True)
+        # outmap_max, _ = torch.max(audio_encoded, dim=1, keepdim=True)
+        # ae = (audio_encoded - outmap_min) / (outmap_max - outmap_min)
+        # ae = ae.view(-1, 64)
+        # print(ae.size())
+        # ae = ae.detach().numpy()
+        # # print(audio_encoded.size())
+        # save_fig('audio_encoded.png', ae)
+
         ax = audio_encoded.transpose(1, 2)
         ax = self.l1(ax)
         self.debug_logger.debug(f'ax.shape {ax.shape}')
@@ -214,13 +221,10 @@ class AVE3Net(pl.LightningModule):
         dense_audio = torch.zeros_like(ax)
         dense_video = torch.zeros_like(vx)
 
-        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm1((vx, ax), dense_audio, dense_video, self.ha, self.hv)
-        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm2((vx, ax), dense_audio, dense_video, ha, hv)
-        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm3((vx, ax), dense_audio, dense_video, ha, hv)
-        (vx, ax), dense_audio, dense_video, ha, hv = self.lstm4((vx, ax), dense_audio, dense_video, ha, hv)
-
-        self.ha = ha
-        self.hv = hv
+        ha, hv = self.ha, self.hv
+        for lstm in self.lstm_blocks:
+            (vx, ax), dense_audio, dense_video, ha, hv = lstm((vx, ax), dense_audio, dense_video, ha, hv)
+        self.ha, self.hv = ha, hv
 
         ##############
 
@@ -231,7 +235,7 @@ class AVE3Net(pl.LightningModule):
 
         # print('after sigmoid', ax.shape)
 
-        ax = ax * audio_encoded  # why ax *= audio_encoded does not work??
+        ax = ax * audio_encoded
 
         ax = self.decoder(ax)
         ax = ax[:, :, self.stride: -(rest + self.stride)].contiguous()  # B*C, 1, L
@@ -239,6 +243,16 @@ class AVE3Net(pl.LightningModule):
         ##############
 
         return ax
+
+
+class AVE3Net(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.debug_logger = logger.get_logger(self.__class__.__name__, logger.logging.NOTSET)
+        self.ave3net = AVE3NetModule(GSFusion(), 4)
+
+    def forward(self, x: Tuple[Tensor, Tensor]) -> Tensor:
+        return self.ave3net(x)
 
     def process_batch(self, batch: Tuple[List[Tensor], List[Tensor], List[Tensor]], batch_idx):
         video, noisy, clean = batch
@@ -307,5 +321,5 @@ if __name__ == "__main__":
     data = [(torch.rand((16, 25, 3, 96, 96)), torch.rand((16, 1, 16000)))]
     summary(AVE3Net(), input_data=data, col_names=["input_size",
                                                    "output_size",
-                                                   "num_params"], depth=1)
+                                                   "num_params"], depth=3)
     # summary(AVE3Net(), input_size=(1, 60000))

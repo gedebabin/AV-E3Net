@@ -1,6 +1,6 @@
 import torchaudio
 from datamodule import DataModule
-from utils.plot_waveform import plot_2_waveform
+from plot_waveforms import plot_2_waveform
 from model import Model
 import torch
 
@@ -24,4 +24,4 @@ x_hat = x_hat.detach()
 torchaudio.save("x_hat.wav", x_hat[0], 16000)
 torchaudio.save("clean.wav", clean, 16000)
 
-plot_2_waveform(x_hat[0], clean, 16000)
+# plot_2_waveform(x_hat[0], clean, 16000)
