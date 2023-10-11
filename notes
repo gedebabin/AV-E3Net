@@ -5,6 +5,8 @@ Shufflenet is for image classification, need to take features without the last f
 find_unused_parameters=True in DDP constructor. unused parameters in shufflenet and lstm block(typo)
 metrics
 
+I HAD TO ADD `export PYTHONPATH="/export/home/7alieksi/ba/src"` to .bashrc to run this 
+
 open
 shufflenet normalize, input size 224
 loss function too close to zero.
@@ -12,6 +14,10 @@ wer metric +
 rtf metric +
 How does real-time work? +
 layernorm
+
+dataset lrs3 only from Julius:
+train 2 times: 1st with mix and s1 as target speaker, 2nd with mix and s2 as target speaker. s1 is louder as s2.
+2 secons gecropped
 
 
 todo 
